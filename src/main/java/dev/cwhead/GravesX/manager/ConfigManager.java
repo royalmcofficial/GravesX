@@ -584,7 +584,8 @@ public final class ConfigManager {
             FileConfiguration mainConfig = YamlConfiguration.loadConfiguration(mainConfigFile);
             int configVersion = mainConfig.getInt("config-version", 0);
 
-            if (configVersion != CURRENT_CONFIG_VERSION || isDevelopmentBuild) {
+            // Development builds must not re-migrate already current user configurations.
+            if (configVersion != CURRENT_CONFIG_VERSION) {
                 paths.outdatedFolder.mkdirs();
                 backupOutdatedConfigs(configVersion);
 
@@ -602,9 +603,10 @@ public final class ConfigManager {
                 File existing = new File(paths.configFolder, name);
                 if (!existing.exists()) continue;
 
-                File backup = new File(paths.outdatedFolder, name + "-" + configVersion);
+                File backup = new File(paths.outdatedFolder,
+                        name + "-v" + configVersion + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID());
                 try {
-                    Files.copy(existing.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    Files.copy(existing.toPath(), backup.toPath());
                 } catch (IOException e) {
                     plugin.logStackTrace(e);
                 }
