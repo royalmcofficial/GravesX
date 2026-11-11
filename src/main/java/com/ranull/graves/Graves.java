@@ -45,6 +45,8 @@ import java.io.*;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Graves extends JavaPlugin {
@@ -171,8 +173,9 @@ public class Graves extends JavaPlugin {
         integrationManager.load();
         integrationManager.loadNoReload();
 
-        cacheManager = new CacheManager();
         dataManager = new DataManager(this);
+        cacheManager = new CacheManager(this);
+        dataManager.startLoading();
         importManager = new ImportManager(this);
         blockManager = new BlockManager(this);
         itemStackManager = new ItemStackManager(this);
@@ -298,8 +301,18 @@ public class Graves extends JavaPlugin {
             return;
         }
 
+        if (dataManager != null) {
+            getLogger().info("Waiting for pending grave database writes to finish...");
+            boolean drained = dataManager.awaitPendingWrites(10_000L);
+            if (drained) {
+                getLogger().info("All pending database writes completed.");
+            } else {
+                getLogger().severe("Timed out waiting for " + dataManager.getPendingWriteCount() + " database write(s) to finish. Some grave data may not be saved. If this happens regularly, your database may be unreachable, experiencing high latency, or unable to sustain the required write speeds.");
+            }
+        }
+
         getLogger().info("Saving Grave inventories before shutting down...");
-        for (Grave grave : getCacheManager().getGraveMap().values()) {
+        for (Grave grave : getCacheManager().gravesToFlush()) {
             try {
                 getDataManager().updateGraveMainThread(grave, "inventory",
                         InventoryUtil.inventoryToString(grave.getInventory(), this));
@@ -311,6 +324,16 @@ public class Graves extends JavaPlugin {
         }
 
         getLogger().info("Grave inventories saved.");
+
+        if (cacheManager != null) {
+            try {
+                getLogger().info("Clearing temporary GravesX cache...");
+                cacheManager.shutdown();
+            } catch (Throwable t) {
+                getLogger().severe("Failed to clear GravesX cache during shutdown.");
+                logStackTrace(t);
+            }
+        }
 
         getLogger().info("Shutting Down GravesX...");
         getLogger().info("Unloading and Shutting Down DataManager...");
@@ -392,25 +415,25 @@ public class Graves extends JavaPlugin {
         libraryLoaderUtil.loadLibrary("org{}bstats", "bstats-base", "3.2.1", "org{}bstats", "com{}ranull{}graves{}libraries{}bstats", false);
         libraryLoaderUtil.loadLibrary("org{}bstats", "bstats-bukkit", "3.2.1", "org{}bstats", "com{}ranull{}graves{}libraries{}bstats", false);
 
-        libraryLoaderUtil.loadLibrary("com{}zaxxer", "HikariCP", "7.0.2", "com{}zaxxer{}hikari", "com{}ranull{}graves{}libraries{}hikari", false);
+        libraryLoaderUtil.loadLibrary("com{}zaxxer", "HikariCP", "7.1.0", "com{}zaxxer{}hikari", "com{}ranull{}graves{}libraries{}hikari", false);
         libraryLoaderUtil.loadLibrary("org{}xerial", "sqlite-jdbc", "3.51.2.0", false);
 
         try {
             Class.forName("org.json.JSONObject");
         } catch (ClassNotFoundException e) {
-            libraryLoaderUtil.loadLibrary("org{}json", "json", "20251224");
+            libraryLoaderUtil.loadLibrary("org{}json", "json", "20260814");
         }
 
         try {
             Class.forName("com.google.gson.Gson");
         } catch (ClassNotFoundException e) {
-            libraryLoaderUtil.loadLibrary("com{}google{}code{}gson", "gson", "2.13.2", false);
+            libraryLoaderUtil.loadLibrary("com{}google{}code{}gson", "gson", "2.14.0", false);
         }
 
         try {
             Class.forName("com.google.common.collect.ImmutableList");
         } catch (ClassNotFoundException e) {
-            libraryLoaderUtil.loadLibrary("com{}google{}guava", "guava", "33.5.0-jre", false);
+            libraryLoaderUtil.loadLibrary("com{}google{}guava", "guava", "33.7.1-jre", false);
         }
 
         //libraryLoaderUtil.loadLibrary("com{}github{}oshi", "oshi-core", "6.8.2", false);
@@ -421,23 +444,19 @@ public class Graves extends JavaPlugin {
 
         switch (storageType) {
             case "POSTGRESQL":
-                libraryLoaderUtil.loadLibrary("org{}postgresql", "postgresql", "42.7.11", "org{}postgresql", "com{}ranull{}graves{}libraries{}postgresql", false);
+                libraryLoaderUtil.loadLibrary("org{}postgresql", "postgresql", "42.7.13", "org{}postgresql", "com{}ranull{}graves{}libraries{}postgresql", false);
                 break;
             case "MARIADB":
-                libraryLoaderUtil.loadLibrary("com{}mysql", "mysql-connector-j", "9.6.0", "com{}mysql", "com{}ranull{}graves{}libraries{}mysql", false);
-                libraryLoaderUtil.loadLibrary("org{}mariadb{}jdbc", "mariadb-java-client", "3.5.6", "org{}mariadb", "com{}ranull{}graves{}libraries{}mariadb", false);
+                libraryLoaderUtil.loadLibrary("com{}mysql", "mysql-connector-j", "26.7.0", "com{}mysql", "com{}ranull{}graves{}libraries{}mysql", false);
+                libraryLoaderUtil.loadLibrary("org{}mariadb{}jdbc", "mariadb-java-client", "3.4.4", "org{}mariadb", "com{}ranull{}graves{}libraries{}mariadb", false);
                 break;
             case "MYSQL":
-                libraryLoaderUtil.loadLibrary("com{}mysql", "mysql-connector-j", "9.6.0", "com{}mysql", "com{}ranull{}graves{}libraries{}mysql", false);
+                libraryLoaderUtil.loadLibrary("com{}mysql", "mysql-connector-j", "26.7.0", "com{}mysql", "com{}ranull{}graves{}libraries{}mysql", false);
                 break;
             case "MSSQL":
-                libraryLoaderUtil.loadLibrary("com{}microsoft{}sqlserver", "mssql-jdbc", "13.3.2.jre11-preview", "com{}microsoft", "com{}ranull{}graves{}libraries{}microsoft", false);
+                libraryLoaderUtil.loadLibrary("com{}microsoft{}sqlserver", "mssql-jdbc", "13.5.1.jre11-preview", "com{}microsoft", "com{}ranull{}graves{}libraries{}microsoft", false);
                 break;
         }
-        libraryLoaderUtil.loadLibrary("net{}kyori", "adventure-platform-bukkit", "4.4.1", "net{}kyori", "com{}ranull{}graves{}libraries{}kyori", false);
-        libraryLoaderUtil.loadLibrary("net{}kyori", "adventure-api", "4.26.1", "net{}kyori", "com{}ranull{}graves{}libraries{}kyori", false);
-        libraryLoaderUtil.loadLibrary("net{}kyori", "adventure-text-minimessage", "4.26.1", "net{}kyori", "com{}ranull{}graves{}libraries{}kyori", false);
-        libraryLoaderUtil.loadLibrary("net{}kyori", "adventure-text-serializer-gson", "4.26.1", "net{}kyori", "com{}ranull{}graves{}libraries{}kyori", false);
         libraryLoaderUtil.loadLibrary("com{}github{}puregero", "multilib", "1.2.4", "com{}github{}puregero{}multilib", "com{}ranull{}graves{}libraries{}multilib", false, "https://repo.clojars.org/");
         libraryLoaderUtil.loadLibrary("org{}apache{}commons", "commons-text", "1.15.0", "org{}apache{}commons{}text", "com{}ranull{}graves{}libraries{}commonstext", false);
 
@@ -460,32 +479,65 @@ public class Graves extends JavaPlugin {
         return getConfigManager().config();
     }
 
+    /** Starts a reload. Completion is logged only after database loading finishes. */
     public void reload() {
+        reloadAsync();
+    }
+
+    /**
+     * Reloads managers and waits asynchronously for all database loading tasks.
+     *
+     * @return completion after database cache application, or exceptional completion on failure
+     */
+    public CompletionStage<Void> reloadAsync() {
         if (!reloading.compareAndSet(false, true)) {
             getLogger().warning("Reload already in progress.");
-            return;
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Reload already in progress."));
         }
 
         long started = System.currentTimeMillis();
         getLogger().info("==== Reloading " + getName() + " ====");
 
+        CompletableFuture<Void> result = new CompletableFuture<>();
+
         try {
             unloadAllForReload();
-
             loadAllAfterReload();
-
-            long took = System.currentTimeMillis() - started;
-            infoMessage(getName() + " reloaded. (" + took + "ms)");
-        } finally {
-            reloading.set(false);
+            dataManager.getLoadingCompletion().whenComplete((unused, error) -> {
+                try {
+                    if (error == null) {
+                        long took = System.currentTimeMillis() - started;
+                        infoMessage(getName() + " reloaded. (" + took + "ms)");
+                    } else {
+                        getLogger().severe("Reload failed while loading the database.");
+                        logStackTrace(error);
+                    }
+                } finally {
+                    reloading.set(false);
+                    if (error == null) result.complete(null);
+                    else result.completeExceptionally(error);
+                }
+            });
+        } catch (Throwable error) {
+            getLogger().severe("Reload failed: " + error.getMessage());
+            logStackTrace(error);
+            CompletionStage<Void> loading = dataManager == null
+                    ? CompletableFuture.completedFuture(null)
+                    : dataManager.getLoadingCompletion();
+            loading.whenComplete((unused, loadError) -> {
+                reloading.set(false);
+                result.completeExceptionally(error);
+            });
         }
+        return result.minimalCompletionStage();
     }
 
     private void unloadAllForReload() {
         try {
             if (cacheManager != null && dataManager != null) {
                 getLogger().info("Saving Grave inventories before reload...");
-                for (Grave grave : getCacheManager().getGraveMap().values()) {
+                for (Grave grave : getCacheManager().gravesToFlush()) {
                     try {
                         getDataManager().updateGraveMainThread(
                                 grave, "inventory", InventoryUtil.inventoryToString(grave.getInventory(), this)
@@ -544,18 +596,15 @@ public class Graves extends JavaPlugin {
             logStackTrace(e);
         }
 
-        tryUnload(integrationManager, "IntegrationManager", "unload", "shutdown", "close");
+        // Avoid reflective getMethod() here: resolving every public method may load
+        // optional Skript API classes even when Skript is not installed.
         try {
             if (integrationManager != null) {
                 integrationManager.unload();
-                try {
-                    if (getIntegrationManager().hasSkript()) {
-                        integrationManager.unloadNoReload();
-                    }
-                } catch (Exception ignored) {
-                    // ignore
-                }
+                integrationManager.unloadNoReload();
             }
+        } catch (LinkageError e) {
+            getLogger().warning("Optional integration unavailable during reload: " + e);
         } catch (Exception e) {
             getLogger().severe("Failed to unload IntegrationManager during reload.");
             logStackTrace(e);
@@ -582,6 +631,12 @@ public class Graves extends JavaPlugin {
 
         try {
             if (dataManager != null) {
+                getLogger().info("Waiting for pending grave database writes to finish before reload...");
+                boolean drained = dataManager.awaitPendingWrites(10_000L);
+                if (!drained) {
+                    getLogger().severe("Timed out waiting for " + dataManager.getPendingWriteCount() + " database write(s) to finish. Some grave data may not be saved. If this happens regularly, your database may be unreachable, experiencing high latency, or unable to sustain the required write speeds.");
+                }
+
                 getLogger().info("Closing DataManager (DB) for reload...");
                 dataManager.closeConnection();
                 getLogger().info("DataManager closed.");
@@ -638,8 +693,8 @@ public class Graves extends JavaPlugin {
             // ignore
         }
 
-        cacheManager = new CacheManager();
         dataManager = new DataManager(this);
+        cacheManager = new CacheManager(this);
         importManager = new ImportManager(this);
         blockManager = new BlockManager(this);
         itemStackManager = new ItemStackManager(this);
@@ -716,6 +771,7 @@ public class Graves extends JavaPlugin {
             moduleManager.tryEnablePending();
             RegisterGraveProviders.bootstrapFromServices();
         });
+        dataManager.startLoading();
     }
 
     private void tryUnload(Object target, String label, String... methodNames) {
@@ -792,6 +848,7 @@ public class Graves extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ExplosionPrimeListener(this), this);
         getServer().getPluginManager().registerEvents(new ProjectileHitListener(this), this);
 
+        // TODO(2027.4.9.1): Remove pre-1.20 version checks and simplify this branch.
         if (!versionManager.is_v1_7()) {
             getServer().getPluginManager().registerEvents(new PlayerInteractAtEntityListener(this), this);
         }
@@ -1509,7 +1566,7 @@ public class Graves extends JavaPlugin {
         String graveX = String.valueOf(affectedGraveLocation.getBlockX());
         String graveY = String.valueOf(affectedGraveLocation.getBlockY());
         String graveZ = String.valueOf(affectedGraveLocation.getBlockZ());
-        getLogger().warning("Grave "
+        debugMessage("Grave "
                 + grave_uuid
                 + " at location World: "
                 + graveWorld
@@ -1521,7 +1578,7 @@ public class Graves extends JavaPlugin {
                 + graveZ
                 + " has the following missing from grave data: "
                 + String.join(", ", invalidationReason)
-                + ". This shouldn't affect grave behavior. Do not report this as a bug.");
+                + ". This shouldn't affect grave behavior. Do not report this as a bug.", 2);
     }
 
     /**

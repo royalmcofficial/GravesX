@@ -1,0 +1,48 @@
+name: GravesX staging build
+
+on:
+  push:
+    branches:
+      - fix/upstream-sync-gravesx-reload-2026-11
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Install bundled Maven dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_local() {
+            mvn -B -ntp install:install-file -Dfile="$1" -DgroupId="$2" -DartifactId="$3" -Dversion="$4" -Dpackaging=jar -DgeneratePom=true
+          }
+          install_local libs/minitranslator-2.6.1-graves.jar com.github.imDaniX MiniTranslator v2.6.1-graves
+          install_local libs/libby-2.0.1-graves2.jar com.alessiodp libby 2.0.1-graves2
+          install_local libs/authlib-7.0.61-graves.jar com.mojang authlib 7.0.61-graves
+          install_local libs/playernpc-2023.6.jar dev.sergiferry PlayerNPC 2023.6
+          install_local libs/FurnitureEngine-3.3.jar com.mira furnitureengine 3.3
+      - name: Build shaded plugin
+        run: mvn -B -ntp -DskipTests=false clean package
+      - name: Upload staging JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: GravesX-upstream-sync-reload-fix-staging
+          path: |
+            target/GravesX-*.jar
+            !target/*-sources.jar
+            !target/*-javadoc.jar
+            !target/*-api.jar
+          if-no-files-found: error
+          retention-days: 14

@@ -9,6 +9,8 @@ settings:
       # Grave #
       #########
       grave:
+        # Priority baseline for permission overrides. Higher values win; default graves use 0.
+        priority: 0
         # (Second) How long graves should stay alive for, 300 = 5 minutes, 10800 = 3 hours, -1 lasts forever.
         time: 10800
         # The max amount of graves an entity can have.
@@ -40,7 +42,7 @@ settings:
         can-build-protectionlib: false
         # If the entity dies in the air should the grave fall to the ground.
         ground: true
-        # If the entity dies in the void, should it place a grave in the air if it can't find anywhere else.
+        # If the entity dies in the void, use its last solid location or place the grave in the air nearby.
         void: true
         # If the entity dies in lava should the grave float to the top.
         lava-top: true
@@ -167,6 +169,8 @@ settings:
         looted-explosion-effect: false
         # Should a grave drop all items if a grave is being replaced as a player reaches the maximum graves allowed?
         old-grave-replacement: true
+        # Should Curse of Binding be bound to a player? False will place the item in a player's grave
+        binding-curse-binds-to-player: true
 
       #########
       # Block #
