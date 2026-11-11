@@ -1,0 +1,36 @@
+name: GravesX staging build
+
+on:
+  push:
+    branches:
+      - fix/upstream-sync-gravesx-reload-2026-11
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build shaded plugin
+        run: mvn -B -ntp -DskipTests=false clean package
+      - name: Upload staging JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: GravesX-upstream-sync-reload-fix-staging
+          path: |
+            target/GravesX-*.jar
+            !target/*-sources.jar
+            !target/*-javadoc.jar
+            !target/*-api.jar
+          if-no-files-found: error
+          retention-days: 14
