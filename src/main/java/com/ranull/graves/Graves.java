@@ -596,18 +596,15 @@ public class Graves extends JavaPlugin {
             logStackTrace(e);
         }
 
-        tryUnload(integrationManager, "IntegrationManager", "unload", "shutdown", "close");
+        // Avoid reflective getMethod() here: resolving every public method may load
+        // optional Skript API classes even when Skript is not installed.
         try {
             if (integrationManager != null) {
                 integrationManager.unload();
-                try {
-                    if (getIntegrationManager().hasSkript()) {
-                        integrationManager.unloadNoReload();
-                    }
-                } catch (Exception ignored) {
-                    // ignore
-                }
+                integrationManager.unloadNoReload();
             }
+        } catch (LinkageError e) {
+            getLogger().warning("Optional integration unavailable during reload: " + e);
         } catch (Exception e) {
             getLogger().severe("Failed to unload IntegrationManager during reload.");
             logStackTrace(e);
